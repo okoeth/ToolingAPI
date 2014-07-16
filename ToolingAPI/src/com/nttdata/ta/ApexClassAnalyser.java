@@ -1,7 +1,17 @@
 package com.nttdata.ta;
 
+import java.io.BufferedWriter;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -24,6 +34,9 @@ import com.nttdata.sf.tooling.SymbolTable;
 public class ApexClassAnalyser {
 	static ObjectFactory objectFactory = new ObjectFactory();
 	static SortedSet<String> arcs = null;
+	static String metadataContainerId = "1dcN0000000ClRDIA0";
+	static LinkedList<String> newDependencies = null;
+	static LinkedList<String> allDependencies = null;
 	
 	private static List<SaveResult> createObject (SObject sobject) {
 		List<SObject> list = new ArrayList<SObject> ();
@@ -40,7 +53,8 @@ public class ApexClassAnalyser {
 		System.out.println(saveResult.get(0).getId());
 	}
 	
-	public static String analyseApexClass(String className) {
+	public static String loadApexClass(String className) {
+		System.out.println("INFO: Load Apex Class "+className);
 		ApexClass apexClass =
 				ToolingDriver.getPort().query("select Id, Name, FullName, Body from ApexClass where NamespacePrefix = null and Name = '"+className+"'")
 			        .getRecords().toArray(new ApexClass[0]) [0];    		
@@ -56,7 +70,8 @@ public class ApexClassAnalyser {
 		return saveResult.get(0).getId();
 	}
 
-	public static String analyseApexTrigger(String triggerName) {
+	public static String loadApexTrigger(String triggerName) {
+		System.out.println("INFO: Load Apex Trigger "+triggerName);
 		ApexTrigger apexTrigger =
 				ToolingDriver.getPort().query("select Id, Name, Body from ApexTrigger where NamespacePrefix = null and Name = '"+triggerName+"'")
 			        .getRecords().toArray(new ApexTrigger[0]) [0];    		
@@ -84,6 +99,7 @@ public class ApexClassAnalyser {
 	
 	// Use: 1dcN0000000ClRDIA0
 	public static void compileMetadataContainer () throws Exception {		
+		System.out.println("INFO: Compile Metadata Container");
 		ContainerAsyncRequest request = new ContainerAsyncRequest();		
         request.setIsCheckOnly(
         		objectFactory.createContainerAsyncRequestIsCheckOnly(false));
@@ -92,7 +108,7 @@ public class ApexClassAnalyser {
         
 		List<SaveResult> saveResult = createObject(request);
 		String requestId = saveResult.get(0).getId();
-		System.out.println("New ContainerAsyncRequestId:"+requestId);
+		System.out.println("INFO: New ContainerAsyncRequestId:"+requestId);
 		
 		while (true) {
 			ContainerAsyncRequest result =
@@ -100,7 +116,7 @@ public class ApexClassAnalyser {
 	        				.getRecords().toArray(new ContainerAsyncRequest[0]) [0];    		
 			
 			String state = result.getState().getValue();
-			System.out.println(state);
+			System.out.println("INFO: "+state);
 			
 			if ("Queued".equals(state)) {
 				Thread.sleep(1000);
@@ -136,8 +152,51 @@ public class ApexClassAnalyser {
 		    return 1;
 		}		
 	}
+	
+	public static String apexClassMemberIdFromName(String name) throws Exception {
+		System.out.println("INFO: Apex Class Member Id from Name "+name);
+		ApexClass[] apexClasses =
+				ToolingDriver.getPort().query("select Id, Name from ApexClass where Name = '"+name+"'")
+			        .getRecords().toArray(new ApexClass[0]);    		
+		
+		if (apexClasses.length != 1) {
+			throw new Exception("ApexClass name could not be resolved: "+name);
+		}
+		
+		ApexClassMember[] apexClassMembers =
+				ToolingDriver.getPort().query("select Id, ContentEntityId, MetadataContainerId from ApexClassMember where ContentEntityId = '"+apexClasses[0].getId()+"'")
+			        .getRecords().toArray(new ApexClassMember[0]);
+		
+		if (apexClassMembers.length == 0) {
+			return null;
+		}
+		
+		return apexClassMembers[0].getId();
+	}
 
+	public static String apexTriggerMemberIdFromName(String name) throws Exception {
+		System.out.println("INFO: Apex Trigger Member Id from Name"+name);
+		ApexTrigger[] apexTriggers =
+				ToolingDriver.getPort().query("select Id, Name from ApexTrigger where Name = '"+name+"'")
+			        .getRecords().toArray(new ApexTrigger[0]);    		
+		
+		if (apexTriggers.length != 1) {
+			throw new Exception("ApexTrigger name could not be resolved: "+name);
+		}
+		
+		ApexTriggerMember[] apexTriggerMembers =
+				ToolingDriver.getPort().query("select Id, ContentEntityId, MetadataContainerId from ApexTriggerMember where ContentEntityId = '"+apexTriggers[0].getId()+"'")
+			        .getRecords().toArray(new ApexTriggerMember[0]);
+		
+		if (apexTriggerMembers.length == 0) {
+			return null;
+		}
+		
+		return apexTriggerMembers[0].getId();
+	}
+	
 	public static void analyseApexClassMember(String id) {
+		System.out.println("INFO: Analyse Apex Class Member "+id);
 		ApexClassMember apexClassMember =
 				ToolingDriver.getPort().query("select Id, SymbolTable from ApexClassMember where Id = '"+id+"'")
 			        .getRecords().toArray(new ApexClassMember[0])[0];    		
@@ -146,7 +205,33 @@ public class ApexClassAnalyser {
 		analyseApexMember(symbolTable);
 	}
 	
+	public static void analyseApexTrigger(String triggerName) throws Exception {
+		System.out.println("INFO: Analyse Apex Trigger "+triggerName);
+		initArcs();
+		initDependencies();
+		String apexTriggerMemberId = apexTriggerMemberIdFromName(triggerName);
+		if (apexTriggerMemberId == null) {
+			loadApexTrigger(triggerName);
+			compileMetadataContainer();
+			apexTriggerMemberId = apexTriggerMemberIdFromName(triggerName);
+		}
+		analyseApexTriggerMember(apexTriggerMemberId);
+		while(!newDependencies.isEmpty()) {
+			String apexClassName = newDependencies.remove();
+			String apexClassMemberId = apexClassMemberIdFromName(apexClassName);
+			if (apexClassMemberId == null) {
+				loadApexClass(apexClassName);
+				compileMetadataContainer();
+				apexClassMemberId = apexClassMemberIdFromName(apexClassName);
+			}
+			analyseApexClassMember(apexClassMemberId);
+		}
+		printDependencies();
+		printArcs("/Users/oliverkoeth/temp/"+triggerName+".gv");
+	}
+	
 	public static void analyseApexTriggerMember(String id) {
+		System.out.println("INFO: Analyse Apex Trigger Member "+id);
 		ApexTriggerMember apexTriggerMember =
 				ToolingDriver.getPort().query("select Id, SymbolTable from ApexTriggerMember where Id = '"+id+"'")
 			        .getRecords().toArray(new ApexTriggerMember[0])[0];    		
@@ -156,6 +241,7 @@ public class ApexClassAnalyser {
 	}
 	
 	private static void analyseApexMember(SymbolTable symbolTable) {
+		System.out.println("INFO: Analyse Apex Member "+symbolTable.getName());
 		List<MethodPosition> items = new ArrayList<MethodPosition>();
 		items.add(
 				new ApexClassAnalyser.MethodPosition(
@@ -165,6 +251,10 @@ public class ApexClassAnalyser {
 		
 		// External References			
 		for (ExternalReference externalReference : symbolTable.getExternalReferences()) {
+			if (! allDependencies.contains(externalReference.getName())) {
+				newDependencies.add(externalReference.getName());
+				allDependencies.add(externalReference.getName());
+			}
 			for (ExternalMethod externalMethod : externalReference.getMethods()) {
 				for (Position position : externalMethod.getReferences()) {
 					items.add(
@@ -223,11 +313,38 @@ public class ApexClassAnalyser {
 		}
 	}
 	
+	public static void initDependencies() {
+		newDependencies = new LinkedList<String>();
+		allDependencies = new LinkedList<String>();
+	}
+	public static void printDependencies() {
+		System.out.println("Dependencies {");
+		for (String dependency : allDependencies) {
+			System.out.println(dependency+";");
+		}
+		System.out.println("}");
+	}
+	
 	public static void initArcs() {
 		arcs = new TreeSet<String>();
 	}
-	public static void printArcs() {
-		// Print in dot language
+	public static void printArcs(String fileName) throws Exception {
+		System.out.println("INFO: Print Arcs to "+fileName);
+		
+		// Write file in dot language
+		Path path = Paths.get(fileName);
+	    try (BufferedWriter writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)){
+	    	writer.write("digraph G {");
+	    	writer.newLine();
+			for (String arc : arcs) {
+				writer.write(arc+";");
+		    	writer.newLine();
+			}
+			writer.write("}");
+	    	writer.newLine();
+	    }		
+		
+		// Doppelt genäht hält besser
 		System.out.println("digraph G {");
 		for (String arc : arcs) {
 			System.out.println(arc+";");
