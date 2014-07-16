@@ -1,10 +1,6 @@
 package com.nttdata.ta;
 
 import java.io.BufferedWriter;
-import java.io.FileOutputStream;
-import java.io.FileWriter;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +10,7 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.SortedSet;
+import java.util.StringTokenizer;
 import java.util.TreeSet;
 
 import com.nttdata.sf.tooling.ApexClass;
@@ -34,6 +31,7 @@ import com.nttdata.sf.tooling.SymbolTable;
 public class ApexClassAnalyser {
 	static ObjectFactory objectFactory = new ObjectFactory();
 	static SortedSet<String> arcs = null;
+	static SortedSet<String> treeArcs = null;
 	static String metadataContainerId = "1dcN0000000ClRDIA0";
 	static LinkedList<String> newDependencies = null;
 	static LinkedList<String> allDependencies = null;
@@ -218,16 +216,21 @@ public class ApexClassAnalyser {
 		analyseApexTriggerMember(apexTriggerMemberId);
 		while(!newDependencies.isEmpty()) {
 			String apexClassName = newDependencies.remove();
-			String apexClassMemberId = apexClassMemberIdFromName(apexClassName);
-			if (apexClassMemberId == null) {
-				loadApexClass(apexClassName);
-				compileMetadataContainer();
-				apexClassMemberId = apexClassMemberIdFromName(apexClassName);
+			try {
+				String apexClassMemberId = apexClassMemberIdFromName(apexClassName);
+				if (apexClassMemberId == null) {
+					loadApexClass(apexClassName);
+					compileMetadataContainer();
+					apexClassMemberId = apexClassMemberIdFromName(apexClassName);
+				}
+				analyseApexClassMember(apexClassMemberId);
+			} catch (Exception e) {
+				System.out.println("WARNING: Skipping Apex Class "+apexClassName);
 			}
-			analyseApexClassMember(apexClassMemberId);
 		}
 		printDependencies();
-		printArcs("/Users/oliverkoeth/temp/"+triggerName+".gv");
+		//printArcs("/Users/oliverkoeth/temp/"+triggerName+".gv");
+		printArcsAsTree("/Users/oliverkoeth/temp/"+triggerName+".gv", triggerName+"_"+triggerName);
 	}
 	
 	public static void analyseApexTriggerMember(String id) {
@@ -310,7 +313,7 @@ public class ApexClassAnalyser {
 					arcs.add(currentDef+" -> "+item.getFullName());
 				}
 			}
-		}
+		}		
 	}
 	
 	public static void initDependencies() {
@@ -328,7 +331,7 @@ public class ApexClassAnalyser {
 	public static void initArcs() {
 		arcs = new TreeSet<String>();
 	}
-	public static void printArcs(String fileName) throws Exception {
+	public static void printArcs(String fileName, SortedSet<String> printArcs) throws Exception {
 		System.out.println("INFO: Print Arcs to "+fileName);
 		
 		// Write file in dot language
@@ -336,7 +339,7 @@ public class ApexClassAnalyser {
 	    try (BufferedWriter writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)){
 	    	writer.write("digraph G {");
 	    	writer.newLine();
-			for (String arc : arcs) {
+			for (String arc : printArcs) {
 				writer.write(arc+";");
 		    	writer.newLine();
 			}
@@ -346,9 +349,40 @@ public class ApexClassAnalyser {
 		
 		// Doppelt genäht hält besser
 		System.out.println("digraph G {");
-		for (String arc : arcs) {
+		for (String arc : printArcs) {
 			System.out.println(arc+";");
 		}
 		System.out.println("}");
+	}
+	
+	private static void initTreeArcs() {
+		treeArcs = new TreeSet<String>();
+	}
+	private static void buildTreeArcs(String nodeName) {
+		for (String arc : arcs) {
+			if (getFromNode(arc).equals(nodeName) && !treeArcs.contains(arc)) {
+				treeArcs.add(arc);
+				buildTreeArcs(getToNode(arc));
+			}
+		}
+	}
+	private static String getFromNode(String arc) {
+		StringTokenizer stringTokenizer = new StringTokenizer(arc);
+		String fromNode = stringTokenizer.nextToken(); 
+		return fromNode;
+	}
+	private static String getToNode(String arc) {
+		StringTokenizer stringTokenizer = new StringTokenizer(arc);
+		stringTokenizer.nextToken(); // Skip
+		stringTokenizer.nextToken(); // Skip
+		String toNode = stringTokenizer.nextToken(); 
+		return toNode;
+	}
+	public static void printArcsAsTree(String fileName, String nodeName) throws Exception {
+		System.out.println("INFO: Print Arcs as Tree to "+fileName);
+		initTreeArcs();
+		buildTreeArcs(nodeName);
+		printArcs(fileName, treeArcs);
+		Runtime.getRuntime().exec("/opt/local/bin/dot -Tpdf "+fileName+" -o "+fileName+".pdf");
 	}
 }

@@ -14,6 +14,8 @@ public class Main {
 	 */
 	public static void main(String[] args) throws Exception {
 		System.out.println("Hello world");
+		System.out.println("User: "+args[1]);
+		System.out.println("Password: ***");
 
         try {        	
         	String sessionId = 
@@ -22,10 +24,15 @@ public class Main {
         	
     		ToolingDriver.createWSBindingProvider(sessionId);
     		
-    		//ApexClassAnalyser.analyseApexTrigger("AccountAfterInsertOrUpdate");
-    		//ApexClassAnalyser.analyseApexTrigger("AccountBeforeInsertUpdate");
-    		//ApexClassAnalyser.analyseApexTrigger("ShareAccountLinksToDealer");
-    		ApexClassAnalyser.analyseApexTrigger("AccountLinkAfter");
+    		ApexClassAnalyser.analyseApexTrigger("AccountAfterInsertOrUpdate");
+//    		ApexClassAnalyser.analyseApexTrigger("AccountBeforeInsertUpdate");
+//    		ApexClassAnalyser.analyseApexTrigger("ShareAccountLinksToDealer");
+//    		ApexClassAnalyser.analyseApexTrigger("AccountLinkAfter");
+//    		ApexClassAnalyser.analyseApexTrigger("RetailTaskAfter");
+//    		ApexClassAnalyser.analyseApexTrigger("ContactAfterInsertUpdate");
+//    		ApexClassAnalyser.analyseApexTrigger("ContactBeforeInsertUpdate");
+//    		ApexClassAnalyser.analyseApexTrigger("TriggerVehicleRelationship");
+//    		ApexClassAnalyser.analyseApexTrigger("VehicleRelationshipAfter");
         }
         finally {
         	PartnerDriver.getWSBindingProvider().close();
