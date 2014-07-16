@@ -9,6 +9,8 @@ package com.nttdata.ta;
  *
  */
 public class Main {
+	static ApexClassAnalyser apexClassAnalyser = new ApexClassAnalyser ();
+	
 	/**
 	 * @param args
 	 */
@@ -22,15 +24,16 @@ public class Main {
         	
     		ToolingDriver.createWSBindingProvider(sessionId);
     		
-    		ApexClassAnalyser.analyseApexTrigger("AccountAfterInsertOrUpdate");
-    		ApexClassAnalyser.analyseApexTrigger("AccountBeforeInsertUpdate");
-    		ApexClassAnalyser.analyseApexTrigger("ShareAccountLinksToDealer");
-    		ApexClassAnalyser.analyseApexTrigger("AccountLinkAfter");
-    		ApexClassAnalyser.analyseApexTrigger("RetailTaskAfter");
-    		ApexClassAnalyser.analyseApexTrigger("ContactAfterInsertUpdate");
-    		ApexClassAnalyser.analyseApexTrigger("ContactBeforeInsertUpdate");
-    		ApexClassAnalyser.analyseApexTrigger("TriggerVehicleRelationship");
-    		ApexClassAnalyser.analyseApexTrigger("VehicleRelationshipAfter");
+    		//apexClassAnalyser.deleteMetadataContainer();
+    		
+    		//System.out.println(apexClassAnalyser.getMetadataContainerId());
+    		//apexClassAnalyser.compileMetadataContainer();
+    		//apexClassAnalyser.analyseApexTrigger("AccountAfterInsertOrUpdate");
+    		apexClassAnalyser.analyseApexControllers();
+    		//apexClassAnalyser.analyseApexClass("ViewSurveyController");
+    		//analyseCRiSTrigger();
+    		//apexClassAnalyser.analyseApexTriggers();
+    		System.out.println("INFO: Number of Compiles in this session "+apexClassAnalyser.getNumOfCompiles());
         }
         finally {
         	PartnerDriver.getWSBindingProvider().close();
@@ -40,4 +43,20 @@ public class Main {
         
 	}
 	
+	public static void analyseCRiSTrigger() throws Exception {
+		// Account
+		apexClassAnalyser.analyseApexTrigger("AccountAfterInsertOrUpdate");
+		apexClassAnalyser.analyseApexTrigger("AccountBeforeInsertUpdate");
+		// Account Link
+		apexClassAnalyser.analyseApexTrigger("ShareAccountLinksToDealer");
+		apexClassAnalyser.analyseApexTrigger("AccountLinkAfter");
+		// Retail Task
+		apexClassAnalyser.analyseApexTrigger("RetailTaskAfter");
+		//Contact
+		apexClassAnalyser.analyseApexTrigger("ContactAfterInsertUpdate");
+		apexClassAnalyser.analyseApexTrigger("ContactBeforeInsertUpdate");
+		// Vehicle Rel (no triggers for vehicle!)
+		apexClassAnalyser.analyseApexTrigger("TriggerVehicleRelationship");
+		apexClassAnalyser.analyseApexTrigger("VehicleRelationshipAfter");
+	}
 }

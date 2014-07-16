@@ -1,23 +1,17 @@
 package com.nttdata.ta;
 
-import java.io.BufferedWriter;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.SortedSet;
-import java.util.StringTokenizer;
-import java.util.TreeSet;
 
 import com.nttdata.sf.tooling.ApexClass;
 import com.nttdata.sf.tooling.ApexClassMember;
 import com.nttdata.sf.tooling.ApexTrigger;
 import com.nttdata.sf.tooling.ApexTriggerMember;
 import com.nttdata.sf.tooling.ContainerAsyncRequest;
+import com.nttdata.sf.tooling.DeleteResult;
+import com.nttdata.sf.tooling.Error;
 import com.nttdata.sf.tooling.ExternalMethod;
 import com.nttdata.sf.tooling.ExternalReference;
 import com.nttdata.sf.tooling.MetadataContainer;
@@ -29,29 +23,78 @@ import com.nttdata.sf.tooling.SaveResult;
 import com.nttdata.sf.tooling.SymbolTable;
 
 public class ApexClassAnalyser {
-	static ObjectFactory objectFactory = new ObjectFactory();
-	static SortedSet<String> arcs = null;
-	static SortedSet<String> treeArcs = null;
-	static String metadataContainerId = "1dcN0000000ClRDIA0";
-	static LinkedList<String> newDependencies = null;
-	static LinkedList<String> allDependencies = null;
+	final private static String METADATA_CONTAINER_NAME="ApexClassAnalyser";
+	final private static String BASE_OUTPUT_DIR="/Users/oliverkoeth/temp/apex-analyser/";
+		
+	private ObjectFactory objectFactory = new ObjectFactory();
+	private String metadataContainerId;
+	private ArcHandler arcHandler = new ArcHandler();
+	private LinkedList<String> newDependencies = null;
+	private LinkedList<String> allDependencies = null;
+	private int numOfCompiles=0;
 	
-	private static List<SaveResult> createObject (SObject sobject) {
+	private List<SaveResult> createObject (SObject sobject) {
 		List<SObject> list = new ArrayList<SObject> ();
-		list.add(sobject);		
-		return ToolingDriver.getPort().create(list);		
+		list.add(sobject);	
+		List<SaveResult> results = ToolingDriver.getPort().create(list);
+		for (SaveResult result : results) {
+			for (Error error : result.getErrors()) {
+				System.out.println("ERROR: "+error.getMessage());
+			}
+		}
+		return results;
 	}
 
-	// Once created: 1dcN0000000ClRDIA0
-	public static void createMetadataContainer () {
-		MetadataContainer container = new MetadataContainer();
-		container.setName(objectFactory.createMetadataContainerName("MyContainer"));
-		
-		List<SaveResult> saveResult = createObject(container);
-		System.out.println(saveResult.get(0).getId());
+	public void deleteMetadataContainer () {
+		System.out.println("INFO: Delete Metadata Container "+METADATA_CONTAINER_NAME);
+		MetadataContainer[] containers =
+				ToolingDriver.getPort().query("select Id, Name from MetadataContainer where Name = '"+METADATA_CONTAINER_NAME+"'")
+		        .getRecords().toArray(new MetadataContainer[0]);    		
+		System.out.println("INFO: Delete Metadata Container "+containers.length);
+		if(containers.length>0) {
+			System.out.println("INFO: Delete Metadata Container "+containers[0].getId());
+			List<DeleteResult> results = ToolingDriver.getPort().delete(Arrays.asList(containers[0].getId()));
+			for (DeleteResult result : results) {
+				for (Error error : result.getErrors()) {
+					System.out.println("ERROR: "+error.getMessage());
+				}
+			}
+		}
 	}
 	
-	public static String loadApexClass(String className) {
+	private String createMetadataContainer () {
+		System.out.println("INFO: Create Metadata Container "+METADATA_CONTAINER_NAME);
+		MetadataContainer container = new MetadataContainer();
+		container.setName(objectFactory.createMetadataContainerName(METADATA_CONTAINER_NAME));
+		
+		List<SaveResult> saveResult = createObject(container);
+		String metadataContainerId = saveResult.get(0).getId();
+		System.out.println("INFO: Metadata Container created "+metadataContainerId);
+		
+		return metadataContainerId;
+	}
+	
+	public String getMetadataContainerId() {
+		System.out.println("INFO: Metadata Container Id from Name "+METADATA_CONTAINER_NAME);
+		if (metadataContainerId != null) {
+			return metadataContainerId;
+		}
+		
+		MetadataContainer[] metadataContainers =
+				ToolingDriver.getPort().query("select Id, Name from MetadataContainer where Name = '"+METADATA_CONTAINER_NAME+"'")
+			        .getRecords().toArray(new MetadataContainer[0]);    		
+		
+		if (metadataContainers.length == 0) {
+			metadataContainerId = createMetadataContainer();
+		}
+		else {
+			metadataContainerId = metadataContainers[0].getId();
+		}
+		
+		return metadataContainerId;
+	}
+	
+	public String loadApexClass(String className) {
 		System.out.println("INFO: Load Apex Class "+className);
 		ApexClass apexClass =
 				ToolingDriver.getPort().query("select Id, Name, FullName, Body from ApexClass where NamespacePrefix = null and Name = '"+className+"'")
@@ -62,13 +105,14 @@ public class ApexClassAnalyser {
 		apexClassMember.setContentEntityId(
 				objectFactory.createApexClassMemberContentEntityId(apexClass.getId()));
 		apexClassMember.setMetadataContainerId(
-				objectFactory.createApexClassMemberMetadataContainerId("1dcN0000000ClRDIA0"));
+				objectFactory.createApexClassMemberMetadataContainerId(
+						getMetadataContainerId()));
 		
 		List<SaveResult> saveResult = createObject(apexClassMember);
 		return saveResult.get(0).getId();
 	}
 
-	public static String loadApexTrigger(String triggerName) {
+	public String loadApexTrigger(String triggerName) {
 		System.out.println("INFO: Load Apex Trigger "+triggerName);
 		ApexTrigger apexTrigger =
 				ToolingDriver.getPort().query("select Id, Name, Body from ApexTrigger where NamespacePrefix = null and Name = '"+triggerName+"'")
@@ -79,79 +123,59 @@ public class ApexClassAnalyser {
 		apexTriggerMember.setContentEntityId(
 				objectFactory.createApexTriggerMemberContentEntityId(apexTrigger.getId()));
 		apexTriggerMember.setMetadataContainerId(
-				objectFactory.createApexTriggerMemberMetadataContainerId("1dcN0000000ClRDIA0"));
+				objectFactory.createApexTriggerMemberMetadataContainerId(
+						getMetadataContainerId()));
 		
 		List<SaveResult> saveResult = createObject(apexTriggerMember);
 		return saveResult.get(0).getId();
 	}
 	
-	// Use: 1drN0000000F7aVIAS
-	public static void checkMetadataContainer () throws Exception {
-		ContainerAsyncRequest result =
-				ToolingDriver.getPort().query("SELECT Id, State, CompilerErrors, ErrorMsg FROM ContainerAsyncRequest where id = '1drN0000000F7aVIAS'")
-        				.getRecords().toArray(new ContainerAsyncRequest[0]) [0];    		
-		
-		String state = result.getState().getValue();
-		System.out.println(state);
-	}	
+//	// Use: 1drN0000000F7aVIAS
+//	public void checkMetadataContainer () throws Exception {
+//		ContainerAsyncRequest result =
+//				ToolingDriver.getPort().query("SELECT Id, State, CompilerErrors, ErrorMsg FROM ContainerAsyncRequest where id = '1drN0000000F7aVIAS'")
+//        				.getRecords().toArray(new ContainerAsyncRequest[0]) [0];    		
+//		
+//		String state = result.getState().getValue();
+//		System.out.println(state);
+//	}	
 	
-	// Use: 1dcN0000000ClRDIA0
-	public static void compileMetadataContainer () throws Exception {		
+	public void compileMetadataContainer () throws Exception {		
 		System.out.println("INFO: Compile Metadata Container");
 		ContainerAsyncRequest request = new ContainerAsyncRequest();		
         request.setIsCheckOnly(
-        		objectFactory.createContainerAsyncRequestIsCheckOnly(false));
+        		objectFactory.createContainerAsyncRequestIsCheckOnly(true));
         request.setMetadataContainerId(
-				objectFactory.createApexClassMemberMetadataContainerId("1dcN0000000ClRDIA0"));
+				objectFactory.createContainerAsyncRequestMetadataContainerId(
+						getMetadataContainerId()));
         
 		List<SaveResult> saveResult = createObject(request);
 		String requestId = saveResult.get(0).getId();
 		System.out.println("INFO: New ContainerAsyncRequestId:"+requestId);
+		numOfCompiles++;
 		
 		while (true) {
-			ContainerAsyncRequest result =
+			ContainerAsyncRequest results =
 					ToolingDriver.getPort().query("SELECT Id, State, CompilerErrors, ErrorMsg FROM ContainerAsyncRequest where id = '" + requestId + "'")
 	        				.getRecords().toArray(new ContainerAsyncRequest[0]) [0];    		
 			
-			String state = result.getState().getValue();
+			String state = results.getState().getValue();
 			System.out.println("INFO: "+state);
 			
 			if ("Queued".equals(state)) {
-				Thread.sleep(1000);
+				Thread.sleep(2000);
 				continue;
 			} else {
+				if ("Failed".equals(state)) {
+					System.out.println("ERROR: "+results.getErrorMsg().getValue());
+					throw new Exception (results.getErrorMsg().getValue());
+				}
 				break;				
 			}			
 		}
 	}
 	
-	static class MethodPosition implements Comparable<ApexClassAnalyser.MethodPosition>{
-		private int line;
-		private String fullName;
-		private boolean isDefinition;
-		public int getLine() { return line; }
-		public String getFullName() { return fullName; }
-		
-		private MethodPosition (int line, String fullName, boolean isDefinition) {
-			this.line = line;
-			this.fullName = fullName;
-			this.isDefinition = isDefinition;
-		}
-
-		@Override
-		public int compareTo(ApexClassAnalyser.MethodPosition otherPosition) {
-		    if (line == otherPosition.getLine()) {
-		      return 0;
-		    }
-		    if (line < otherPosition.getLine()) {
-		      return -1;
-		    }
-		    
-		    return 1;
-		}		
-	}
-	
-	public static String apexClassMemberIdFromName(String name) throws Exception {
+	public String apexClassMemberIdFromName(String name) throws Exception {
 		System.out.println("INFO: Apex Class Member Id from Name "+name);
 		ApexClass[] apexClasses =
 				ToolingDriver.getPort().query("select Id, Name from ApexClass where Name = '"+name+"'")
@@ -161,18 +185,22 @@ public class ApexClassAnalyser {
 			throw new Exception("ApexClass name could not be resolved: "+name);
 		}
 		
+		System.out.println("INFO: Using ApexClassId "+apexClasses[0].getId());
 		ApexClassMember[] apexClassMembers =
-				ToolingDriver.getPort().query("select Id, ContentEntityId, MetadataContainerId from ApexClassMember where ContentEntityId = '"+apexClasses[0].getId()+"'")
+				ToolingDriver.getPort().query("select Id, ContentEntityId, SymbolTable from ApexClassMember where ContentEntityId = '"+apexClasses[0].getId()+"'")
 			        .getRecords().toArray(new ApexClassMember[0]);
 		
-		if (apexClassMembers.length == 0) {
-			return null;
+		String apexClassMemberId = null;
+		for (ApexClassMember apexClassMember : apexClassMembers) {
+			if (apexClassMember.getSymbolTable()!=null) {
+				apexClassMemberId = apexClassMember.getId();
+			}
 		}
 		
-		return apexClassMembers[0].getId();
+		return apexClassMemberId;
 	}
 
-	public static String apexTriggerMemberIdFromName(String name) throws Exception {
+	public String apexTriggerMemberIdFromName(String name) throws Exception {
 		System.out.println("INFO: Apex Trigger Member Id from Name"+name);
 		ApexTrigger[] apexTriggers =
 				ToolingDriver.getPort().query("select Id, Name from ApexTrigger where Name = '"+name+"'")
@@ -182,18 +210,22 @@ public class ApexClassAnalyser {
 			throw new Exception("ApexTrigger name could not be resolved: "+name);
 		}
 		
+		System.out.println("INFO: Using ApexTriggerId "+apexTriggers[0].getId());
 		ApexTriggerMember[] apexTriggerMembers =
-				ToolingDriver.getPort().query("select Id, ContentEntityId, MetadataContainerId from ApexTriggerMember where ContentEntityId = '"+apexTriggers[0].getId()+"'")
+				ToolingDriver.getPort().query("select Id, ContentEntityId, SymbolTable from ApexTriggerMember where ContentEntityId = '"+apexTriggers[0].getId()+"'")
 			        .getRecords().toArray(new ApexTriggerMember[0]);
 		
-		if (apexTriggerMembers.length == 0) {
-			return null;
+		String apexTriggerMemberId = null;
+		for (ApexTriggerMember apexTriggerMember : apexTriggerMembers) {
+			if (apexTriggerMember.getSymbolTable()!=null) {
+				apexTriggerMemberId = apexTriggerMember.getId();
+			}
 		}
 		
-		return apexTriggerMembers[0].getId();
+		return apexTriggerMemberId;
 	}
 	
-	public static void analyseApexClassMember(String id) {
+	public void analyseApexClassMember(String id) {
 		System.out.println("INFO: Analyse Apex Class Member "+id);
 		ApexClassMember apexClassMember =
 				ToolingDriver.getPort().query("select Id, SymbolTable from ApexClassMember where Id = '"+id+"'")
@@ -202,10 +234,62 @@ public class ApexClassAnalyser {
 		SymbolTable symbolTable = apexClassMember.getSymbolTable().getValue();
 		analyseApexMember(symbolTable);
 	}
+
+	// Selection done by naming convention only
+	public void analyseApexControllers() throws Exception {
+		System.out.println("INFO: Analyse all Apex Controllers");
+		ApexClass[] apexClasses =
+				ToolingDriver.getPort().query("select Id, Name from ApexClass where NamespacePrefix = null and Name like '%Controller' order by Name")
+			        .getRecords().toArray(new ApexClass[0]);    		
+
+		for (ApexClass apexClass : apexClasses) {
+			analyseApexClass(apexClass.getName().getValue());
+		}
+	}
 	
-	public static void analyseApexTrigger(String triggerName) throws Exception {
+	public void analyseApexClass(String className) throws Exception {
+		System.out.println("INFO: Analyse Apex Class "+className);
+		arcHandler.initArcs();
+		initDependencies();
+		String apexClassMemberId = apexClassMemberIdFromName(className);
+		if (apexClassMemberId == null) {
+			loadApexClass(className);
+			compileMetadataContainer();
+			apexClassMemberId = apexClassMemberIdFromName(className);
+		}
+		analyseApexClassMember(apexClassMemberId);
+		while(!newDependencies.isEmpty()) {
+			String apexClassName = newDependencies.remove();
+			try {
+				apexClassMemberId = apexClassMemberIdFromName(apexClassName);
+				if (apexClassMemberId == null) {
+					loadApexClass(apexClassName);
+					compileMetadataContainer();
+					apexClassMemberId = apexClassMemberIdFromName(apexClassName);
+				}
+				analyseApexClassMember(apexClassMemberId);
+			} catch (Exception e) {
+				System.out.println("WARNING: Skipping Apex Class "+apexClassName);
+			}
+		}
+		printDependencies();
+		arcHandler.printArcsAsTree(BASE_OUTPUT_DIR+className, className+"_"+className);
+	}
+
+	public void analyseApexTriggers() throws Exception {
+		System.out.println("INFO: Analyse all Apex Triggers");
+		ApexTrigger[] apexTriggers =
+				ToolingDriver.getPort().query("select Id, Name from ApexTrigger where NamespacePrefix = null order by Name")
+			        .getRecords().toArray(new ApexTrigger[0]);    		
+
+		for (ApexTrigger apexTrigger : apexTriggers) {
+			analyseApexTrigger(apexTrigger.getName().getValue());
+		}
+	}
+	
+	public void analyseApexTrigger(String triggerName) throws Exception {
 		System.out.println("INFO: Analyse Apex Trigger "+triggerName);
-		initArcs();
+		arcHandler.initArcs();
 		initDependencies();
 		String apexTriggerMemberId = apexTriggerMemberIdFromName(triggerName);
 		if (apexTriggerMemberId == null) {
@@ -229,11 +313,10 @@ public class ApexClassAnalyser {
 			}
 		}
 		printDependencies();
-		//printArcs("/Users/oliverkoeth/temp/"+triggerName+".gv");
-		printArcsAsTree("/Users/oliverkoeth/temp/"+triggerName+".gv", triggerName+"_"+triggerName);
+		arcHandler.printArcsAsTree(BASE_OUTPUT_DIR+triggerName, triggerName+"_"+triggerName);
 	}
 	
-	public static void analyseApexTriggerMember(String id) {
+	public void analyseApexTriggerMember(String id) {
 		System.out.println("INFO: Analyse Apex Trigger Member "+id);
 		ApexTriggerMember apexTriggerMember =
 				ToolingDriver.getPort().query("select Id, SymbolTable from ApexTriggerMember where Id = '"+id+"'")
@@ -243,11 +326,11 @@ public class ApexClassAnalyser {
 		analyseApexMember(symbolTable);
 	}
 	
-	private static void analyseApexMember(SymbolTable symbolTable) {
+	private void analyseApexMember(SymbolTable symbolTable) {
 		System.out.println("INFO: Analyse Apex Member "+symbolTable.getName());
-		List<MethodPosition> items = new ArrayList<MethodPosition>();
+		List<ArcHandler.MethodPosition> items = new ArrayList<ArcHandler.MethodPosition>();
 		items.add(
-				new ApexClassAnalyser.MethodPosition(
+				new ArcHandler.MethodPosition(
 						0, 
 						symbolTable.getName()+"_"+symbolTable.getName(),
 						true));
@@ -261,7 +344,7 @@ public class ApexClassAnalyser {
 			for (ExternalMethod externalMethod : externalReference.getMethods()) {
 				for (Position position : externalMethod.getReferences()) {
 					items.add(
-							new ApexClassAnalyser.MethodPosition(
+							new ArcHandler.MethodPosition(
 									position.getLine(), 
 									externalReference.getName()+"_"+externalMethod.getName(),
 									false));
@@ -272,13 +355,13 @@ public class ApexClassAnalyser {
 		// Methods
 		for (Method method : symbolTable.getMethods()) {
 			items.add(
-					new ApexClassAnalyser.MethodPosition(
+					new ArcHandler.MethodPosition(
 							method.getLocation().getLine(), 
 							symbolTable.getName()+"_"+method.getName(),
 							true));
 			for (Position position : method.getReferences()) {
 				items.add(
-						new ApexClassAnalyser.MethodPosition(
+						new ArcHandler.MethodPosition(
 								position.getLine(), 
 								symbolTable.getName()+"_"+method.getName(),
 								false));
@@ -286,41 +369,15 @@ public class ApexClassAnalyser {
 		}
 		
 		// Process results
-		addArcs(items);
+		arcHandler.addArcs(items);
 	}
 	
-	private static void addArcs(List<MethodPosition> items) {
-		// Blacklist
-		SortedSet<String> blackset = new TreeSet<String>();
-		blackset.add("CMap_");
-		
-		// Build arcs w/o dups and blacklist
-		Collections.sort(items);
-		String currentDef = null;
-		for (MethodPosition item : items) {
-			if (item.isDefinition) {
-				currentDef = item.getFullName();
-			}
-			else {
-				boolean skip = false;
-				for (String blackItem : blackset) {
-					if (item.getFullName().startsWith(blackItem)) {
-						skip = true;
-						break;
-					}					
-				}
-				if (!skip) {
-					arcs.add(currentDef+" -> "+item.getFullName());
-				}
-			}
-		}		
-	}
-	
-	public static void initDependencies() {
+	public void initDependencies() {
 		newDependencies = new LinkedList<String>();
 		allDependencies = new LinkedList<String>();
 	}
-	public static void printDependencies() {
+	
+	public void printDependencies() {
 		System.out.println("Dependencies {");
 		for (String dependency : allDependencies) {
 			System.out.println(dependency+";");
@@ -328,65 +385,7 @@ public class ApexClassAnalyser {
 		System.out.println("}");
 	}
 	
-	public static void initArcs() {
-		arcs = new TreeSet<String>();
-	}
-	public static void printArcs(String fileName, SortedSet<String> printArcs) throws Exception {
-		System.out.println("INFO: Print Arcs to "+fileName);
-		
-		// Write file in dot language
-		Path path = Paths.get(fileName);
-	    try (BufferedWriter writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)){
-	    	writer.write("digraph G {");
-	    	writer.newLine();
-			for (String arc : printArcs) {
-				writer.write(arc+";");
-		    	writer.newLine();
-			}
-			writer.write("}");
-	    	writer.newLine();
-	    }		
-		
-		// Doppelt genäht hält besser
-		System.out.println("digraph G {");
-		for (String arc : printArcs) {
-			System.out.println(arc+";");
-		}
-		System.out.println("}");
-	}
-	
-	private static void initTreeArcs() {
-		treeArcs = new TreeSet<String>();
-	}
-	private static void buildTreeArcs(String nodeName) {
-		System.out.println("INFO: Build Tree Arcs for Node "+nodeName);
-		for (String arc : arcs) {
-			if (getFromNode(arc).equals(nodeName) && !treeArcs.contains(arc)) {
-				System.out.println("INFO: Decending into "+getToNode(arc));
-				treeArcs.add(arc);
-				buildTreeArcs(getToNode(arc));
-			}
-		}
-	}
-	private static String getFromNode(String arc) {
-		StringTokenizer stringTokenizer = new StringTokenizer(arc);
-		String fromNode = stringTokenizer.nextToken(); 
-		System.out.println("INFO: From node "+fromNode);
-		return fromNode;
-	}
-	private static String getToNode(String arc) {
-		StringTokenizer stringTokenizer = new StringTokenizer(arc);
-		stringTokenizer.nextToken(); // Skip
-		stringTokenizer.nextToken(); // Skip
-		String toNode = stringTokenizer.nextToken(); 
-		System.out.println("INFO: From node "+toNode);
-		return toNode;
-	}
-	public static void printArcsAsTree(String fileName, String nodeName) throws Exception {
-		System.out.println("INFO: Print Arcs as Tree to "+fileName);
-		initTreeArcs();
-		buildTreeArcs(nodeName);
-		printArcs(fileName, treeArcs);
-		Runtime.getRuntime().exec("/opt/local/bin/dot -Tpdf "+fileName+" -o "+fileName+".pdf");
+	public int getNumOfCompiles() {		
+		return numOfCompiles;
 	}
 }
