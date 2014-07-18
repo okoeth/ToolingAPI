@@ -4,11 +4,17 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import com.nttdata.sf.tooling.ApexClass;
 import com.nttdata.sf.tooling.ApexClassMember;
 import com.nttdata.sf.tooling.ApexTrigger;
 import com.nttdata.sf.tooling.ApexTriggerMember;
+import com.nttdata.sf.tooling.Constructor;
 import com.nttdata.sf.tooling.ContainerAsyncRequest;
 import com.nttdata.sf.tooling.DeleteResult;
 import com.nttdata.sf.tooling.Error;
@@ -24,7 +30,8 @@ import com.nttdata.sf.tooling.SymbolTable;
 
 public class ApexClassAnalyser {
 	final private static String METADATA_CONTAINER_NAME="ApexClassAnalyser";
-	final private static String BASE_OUTPUT_DIR="/Users/oliverkoeth/temp/apex-analyser/";
+	final private static String BASE_CLASS_OUTPUT_DIR="/Users/oliverkoeth/temp/apex-class-analyser/";
+	final private static String BASE_TRIGGER_OUTPUT_DIR="/Users/oliverkoeth/temp/apex-trigger-analyser/";
 		
 	private ObjectFactory objectFactory = new ObjectFactory();
 	private String metadataContainerId;
@@ -33,10 +40,18 @@ public class ApexClassAnalyser {
 	private LinkedList<String> allDependencies = null;
 	private int numOfCompiles=0;
 	
+	private Map<String, String> apexClassMemberCache = null;
+	
+	// Move to driver?
 	private List<SaveResult> createObject (SObject sobject) {
-		List<SObject> list = new ArrayList<SObject> ();
-		list.add(sobject);	
-		List<SaveResult> results = ToolingDriver.getPort().create(list);
+		List<SObject> sobjects = new ArrayList<SObject> ();
+		sobjects.add(sobject);
+		return createObjects(sobjects);
+	}
+	
+	// Move to driver?
+	private List<SaveResult> createObjects (List<SObject> sobjects) {
+		List<SaveResult> results = ToolingDriver.getPort().create(sobjects);
 		for (SaveResult result : results) {
 			for (Error error : result.getErrors()) {
 				System.out.println("ERROR: "+error.getMessage());
@@ -45,6 +60,24 @@ public class ApexClassAnalyser {
 		return results;
 	}
 
+	// Move to driver?
+	private List<DeleteResult> deleteObject (String id) {
+		List<String> ids = new ArrayList<String> ();
+		ids.add(id);
+		return deleteObjects(ids);
+	}
+	
+	// Move to driver?
+	private List<DeleteResult> deleteObjects (List<String> ids) {
+		List<DeleteResult> results = ToolingDriver.getPort().delete(ids);
+		for (DeleteResult result : results) {
+			for (Error error : result.getErrors()) {
+				System.out.println("ERROR: "+error.getMessage());
+			}
+		}
+		return results;
+	}
+	
 	public void deleteMetadataContainer () {
 		System.out.println("INFO: Delete Metadata Container "+METADATA_CONTAINER_NAME);
 		MetadataContainer[] containers =
@@ -60,6 +93,7 @@ public class ApexClassAnalyser {
 				}
 			}
 		}
+		apexClassMemberCache = null;
 	}
 	
 	private String createMetadataContainer () {
@@ -70,6 +104,8 @@ public class ApexClassAnalyser {
 		List<SaveResult> saveResult = createObject(container);
 		String metadataContainerId = saveResult.get(0).getId();
 		System.out.println("INFO: Metadata Container created "+metadataContainerId);
+		
+		apexClassMemberCache = new TreeMap<String, String>();
 		
 		return metadataContainerId;
 	}
@@ -93,8 +129,72 @@ public class ApexClassAnalyser {
 		
 		return metadataContainerId;
 	}
+
+	public void loadAllApexClasses() {
+		System.out.println("INFO: Load all Apex Classes ");
+		ApexClass[] apexClasses =
+				//ToolingDriver.getPort().query("select Id, Name, FullName, Body from ApexClass where NamespacePrefix = null and Name like '%Controller' order by Name")
+				ToolingDriver.getPort().query("select Id, Name, FullName, Body from ApexClass where NamespacePrefix = null order by Name")
+			        .getRecords().toArray(new ApexClass[0]);
+		
+		List<SObject> apexClassMembers = new ArrayList<SObject>();
+		for (ApexClass apexClass : apexClasses) {
+			ApexClassMember apexClassMember = new ApexClassMember();
+			apexClassMember.setBody(
+					objectFactory.createApexClassMemberBody(apexClass.getBody().getValue()));
+			apexClassMember.setContentEntityId(
+					objectFactory.createApexClassMemberContentEntityId(apexClass.getId()));
+			apexClassMember.setMetadataContainerId(
+					objectFactory.createApexClassMemberMetadataContainerId(
+							getMetadataContainerId()));
+			apexClassMembers.add(apexClassMember);
+		}		
+		List<SaveResult> saveResults = createObjects(apexClassMembers);
+		int i = 0;
+		for (SaveResult saveResult : saveResults) {
+			apexClassMemberCache.put(apexClasses[i].getName().getValue(), saveResult.getId());
+			// End for
+			i++;
+		}
+	}
 	
-	public String loadApexClass(String className) {
+	private void unloadApexClasses(List<String> classNames) {
+		System.out.println("INFO: Unload Apex Classes ");
+		List<String> apexClassMemberIds = new ArrayList<String>();
+		for (String className : classNames) {
+			String apexClassMemberId = apexClassMemberCache.get(className);
+			if (apexClassMemberId == null) {
+				System.out.println("WARNING: Apex Class Member for "+className+"not found in cache");
+			}
+			else {
+				apexClassMemberIds.add(apexClassMemberId);
+			}
+		}		
+		deleteObjects(apexClassMemberIds);
+	}
+	
+	private void loadAllApexTriggers() {
+		System.out.println("INFO: Load all Apex Triggers ");
+		ApexTrigger[] apexTriggers =
+				ToolingDriver.getPort().query("select Id, Name, Body from ApexTrigger where NamespacePrefix = null")
+			        .getRecords().toArray(new ApexTrigger[0]);
+		
+		List<SObject> apexTriggerMembers = new ArrayList<SObject>();
+		for (ApexTrigger apexTrigger : apexTriggers) {
+			ApexTriggerMember apexTriggerMember = new ApexTriggerMember();
+			apexTriggerMember.setBody(
+					objectFactory.createApexClassMemberBody(apexTrigger.getBody().getValue()));
+			apexTriggerMember.setContentEntityId(
+					objectFactory.createApexClassMemberContentEntityId(apexTrigger.getId()));
+			apexTriggerMember.setMetadataContainerId(
+					objectFactory.createApexClassMemberMetadataContainerId(
+							getMetadataContainerId()));
+			apexTriggerMembers.add(apexTriggerMember);
+		}		
+		createObjects(apexTriggerMembers);
+	}
+	
+	private String loadApexClass(String className) {
 		System.out.println("INFO: Load Apex Class "+className);
 		ApexClass apexClass =
 				ToolingDriver.getPort().query("select Id, Name, FullName, Body from ApexClass where NamespacePrefix = null and Name = '"+className+"'")
@@ -112,7 +212,7 @@ public class ApexClassAnalyser {
 		return saveResult.get(0).getId();
 	}
 
-	public String loadApexTrigger(String triggerName) {
+	private String loadApexTrigger(String triggerName) {
 		System.out.println("INFO: Load Apex Trigger "+triggerName);
 		ApexTrigger apexTrigger =
 				ToolingDriver.getPort().query("select Id, Name, Body from ApexTrigger where NamespacePrefix = null and Name = '"+triggerName+"'")
@@ -140,6 +240,22 @@ public class ApexClassAnalyser {
 //		System.out.println(state);
 //	}	
 	
+	public String compileFixErrorString(String compilerErrors) {
+		if (compilerErrors == null) {
+			return null;
+		}
+		
+		if ("".equals(compilerErrors) || compilerErrors.lastIndexOf("}") < 0) {
+			return "";
+		}
+			
+		String fixedCompilerErrors =
+				compilerErrors.substring(
+						0, compilerErrors.lastIndexOf("}"))+"}]";
+		
+		return fixedCompilerErrors;
+	}
+	
 	public void compileMetadataContainer () throws Exception {		
 		System.out.println("INFO: Compile Metadata Container");
 		ContainerAsyncRequest request = new ContainerAsyncRequest();		
@@ -163,12 +279,29 @@ public class ApexClassAnalyser {
 			System.out.println("INFO: "+state);
 			
 			if ("Queued".equals(state)) {
-				Thread.sleep(2000);
+				Thread.sleep(5000);
 				continue;
 			} else {
 				if ("Failed".equals(state)) {
-					System.out.println("ERROR: "+results.getErrorMsg().getValue());
-					throw new Exception (results.getErrorMsg().getValue());
+					if (results.getErrorMsg()!=null) {
+						System.out.println("ERROR: "+results.getErrorMsg().getValue());
+						throw new Exception (results.getErrorMsg().getValue());
+					}
+					if (results.getCompilerErrors()!=null) {
+						String compilerErrors = 
+								compileFixErrorString(results.getCompilerErrors().getValue());
+						System.out.println("ERROR: "+compilerErrors);
+						JSONArray errorArray = new JSONArray(compilerErrors);
+						List<String> errorApexClassNames = new ArrayList<String>();
+						for (int i = 0; i < errorArray.length(); i++) {
+							JSONObject error = (JSONObject) errorArray.get(i);
+							System.out.println("ERROR: Compile failed for Apex Class "+error.getString("name"));
+							errorApexClassNames.add(error.getString("name"));
+						}
+						unloadApexClasses(errorApexClassNames);
+					}
+					System.out.println("ERROR: Compile failed for unspecific reason");
+					throw new Exception ("Compile failed for unspecific reason");
 				}
 				break;				
 			}			
@@ -235,6 +368,14 @@ public class ApexClassAnalyser {
 		analyseApexMember(symbolTable);
 	}
 
+	public void compileAll() throws Exception {
+		System.out.println("INFO: Compile all Apex Classes and Triggers");
+		deleteMetadataContainer();
+		loadAllApexClasses();
+		loadAllApexTriggers();
+		compileMetadataContainer();
+	}
+	
 	// Selection done by naming convention only
 	public void analyseApexControllers() throws Exception {
 		System.out.println("INFO: Analyse all Apex Controllers");
@@ -273,7 +414,7 @@ public class ApexClassAnalyser {
 			}
 		}
 		printDependencies();
-		arcHandler.printArcsAsTree(BASE_OUTPUT_DIR+className, className+"_"+className);
+		arcHandler.printArcsAsForest(BASE_CLASS_OUTPUT_DIR+className, className);
 	}
 
 	public void analyseApexTriggers() throws Exception {
@@ -313,7 +454,7 @@ public class ApexClassAnalyser {
 			}
 		}
 		printDependencies();
-		arcHandler.printArcsAsTree(BASE_OUTPUT_DIR+triggerName, triggerName+"_"+triggerName);
+		arcHandler.printArcsAsTree(BASE_TRIGGER_OUTPUT_DIR+triggerName, triggerName+"_"+triggerName);
 	}
 	
 	public void analyseApexTriggerMember(String id) {
@@ -349,6 +490,22 @@ public class ApexClassAnalyser {
 									externalReference.getName()+"_"+externalMethod.getName(),
 									false));
 				}
+			}
+		}
+
+		// Constructors
+		for (Constructor constructure : symbolTable.getConstructors()) {
+			items.add(
+					new ArcHandler.MethodPosition(
+							constructure.getLocation().getLine(), 
+							symbolTable.getName()+"_"+constructure.getName(),
+							true));
+			for (Position position : constructure.getReferences()) {
+				items.add(
+						new ArcHandler.MethodPosition(
+								position.getLine(), 
+								symbolTable.getName()+"_"+constructure.getName(),
+								false));
 			}
 		}
 		

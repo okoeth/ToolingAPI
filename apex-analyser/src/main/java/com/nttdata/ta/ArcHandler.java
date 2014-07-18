@@ -53,25 +53,30 @@ public class ArcHandler {
 	public void initArcs() {
 		arcs = new TreeSet<String>();
 	}
-	public String printArcs(String fileName, SortedSet<String> printArcs) throws Exception {
-		// Write file in dot language
-		System.out.println("INFO: Number of nodes: "+treeNodes.size());
-		System.out.println("INFO: Number of arcs: "+treeArcs.size());
-		int complexity = treeArcs.size()*treeNodes.size();
-		System.out.println("INFO: Complexity: "+complexity);
-		String fullFileName = fileName+"-"+complexity+".gv";
-		Path path = Paths.get(fullFileName);
-	    try (BufferedWriter writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)){
-	    	writer.write("digraph G {");
-	    	writer.newLine();
-			for (String arc : printArcs) {
-				writer.write(arc+";");
+	public void printArcs() throws Exception {
+		printArcs(null, arcs);
+	}
+	private String printArcs(String fileName, SortedSet<String> printArcs) throws Exception {
+		String fullFileName = null;
+		if (fileName!=null) {
+			// Write file in dot language
+			System.out.println("INFO: Number of nodes: "+treeNodes.size());
+			System.out.println("INFO: Number of arcs: "+treeArcs.size());
+			int complexity = treeArcs.size()*treeNodes.size();
+			System.out.println("INFO: Complexity: "+complexity);
+			fullFileName = fileName+"-"+complexity+".gv";
+			Path path = Paths.get(fullFileName);
+		    try (BufferedWriter writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)){
+		    	writer.write("digraph G {");
 		    	writer.newLine();
-			}
-			writer.write("}");
-	    	writer.newLine();
-	    }		
-		
+				for (String arc : printArcs) {
+					writer.write(arc+";");
+			    	writer.newLine();
+				}
+				writer.write("}");
+		    	writer.newLine();
+		    }		
+		}
 		// Doppelt genäht hält besser
 		System.out.println("digraph G {");
 		for (String arc : printArcs) {
@@ -85,6 +90,14 @@ public class ArcHandler {
 	private void initTreeArcs() {
 		treeArcs = new TreeSet<String>();
 		treeNodes = new TreeSet<String>();
+	}
+	private void buildForestArcs(String className) {
+		for (String arc : arcs) {
+			if (getFromNode(arc).startsWith(className+"_") && !treeArcs.contains(arc)) {
+				treeArcs.add(arc);
+				buildTreeArcs(getToNode(arc));
+			}
+		}
 	}
 	private void buildTreeArcs(String nodeName) {
 		treeNodes.add(nodeName);
@@ -114,7 +127,13 @@ public class ArcHandler {
 		String fullFileName = printArcs(baseFileName, treeArcs);
 		Runtime.getRuntime().exec("/opt/local/bin/dot -Tpdf "+fullFileName+" -o "+fullFileName+".pdf");
 	}
-	
+	public void printArcsAsForest(String baseFileName, String className) throws Exception {
+		System.out.println("INFO: Print Arcs as Forest to "+baseFileName);
+		initTreeArcs();
+		buildForestArcs(className);
+		String fullFileName = printArcs(baseFileName, treeArcs);
+		Runtime.getRuntime().exec("/opt/local/bin/dot -Tpdf "+fullFileName+" -o "+fullFileName+".pdf");
+	}
 	public void addArcs(List<MethodPosition> items) {
 		// Blacklist
 		SortedSet<String> blackset = new TreeSet<String>();
