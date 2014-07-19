@@ -3,9 +3,9 @@
  */
 package com.nttdata.ta;
 
-import com.nttdata.sf.partner.DescribeRelatedContentItem;
-import com.nttdata.sf.tooling.DescribeSObjectResult;
-import com.nttdata.sf.tooling.Field;
+//import com.nttdata.sf.partner.DescribeRelatedContentItem;
+//import com.nttdata.sf.tooling.DescribeSObjectResult;
+//import com.nttdata.sf.tooling.Field;
 
 public class Main {
 	static ApexClassAnalyser apexClassAnalyser = new ApexClassAnalyser ();
@@ -20,13 +20,16 @@ public class Main {
         	
     		ToolingDriver.createWSBindingProvider(sessionId);
     		
-            DescribeSObjectResult result = 
-            		ToolingDriver.getPort().describeSObject("ApexClass");
-            
-            for (Field field : result.getFields()) {
-            	System.out.println(field.getName());
-            }
-    		
+//            DescribeSObjectResult result = 
+//            		ToolingDriver.getPort().describeSObject("ApexClass");
+//            
+//            for (Field field : result.getFields()) {
+//            	System.out.println(field.getName());
+//            }
+
+    		ApexClassAnalyser apexClassAnalyser = new ApexClassAnalyser();
+//    		apexClassAnalyser.deleteMetadataContainer();
+    		apexClassAnalyser.analyseApexTrigger("AccountLinkAfter");
         }
         finally {
         	PartnerDriver.getWSBindingProvider().close();

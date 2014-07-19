@@ -51,7 +51,7 @@ public class ApexClassAnalyser {
 		return numOfCompiles;
 	}
 
-	private void deleteMetadataContainer () {
+	public void deleteMetadataContainer () {
 		System.out.println("INFO: Delete Metadata Container "+METADATA_CONTAINER_NAME);
 		MetadataContainer[] containers =
 				ToolingDriver.getPort().query("select Id, Name from MetadataContainer where Name = '"+METADATA_CONTAINER_NAME+"'")
@@ -248,7 +248,7 @@ public class ApexClassAnalyser {
 	private ApexTrigger apexTriggerFromName(String triggerName) throws Exception {
 		System.out.println("INFO: Load Apex Trigger "+triggerName);
 		ApexTrigger[] apexTriggeres =
-				ToolingDriver.getPort().query("select Id, Name, FullName, Body from ApexTrigger where NamespacePrefix = null and Name = '"+triggerName+"'")
+				ToolingDriver.getPort().query("select Id, Name, Body from ApexTrigger where NamespacePrefix = null and Name = '"+triggerName+"'")
 			        .getRecords().toArray(new ApexTrigger[0]);   
 
 		if (apexTriggeres.length != 1) {
@@ -297,13 +297,13 @@ public class ApexClassAnalyser {
 		analyseApexTriggerMember(apexTriggerMember);
 		
 		while(!newDependencies.isEmpty()) {
-			String dependantApexTriggerName = newDependencies.remove();
+			String dependantApexClassName = newDependencies.remove();
 			try {
-				ApexTriggerMember dependantApexTriggerMember = 
-						apexTriggerMemberFromNameCompiled(dependantApexTriggerName);
-				analyseApexTriggerMember(dependantApexTriggerMember);
+				ApexClassMember dependantApexClassMember = 
+						apexClassMemberFromNameCompiled(dependantApexClassName);
+				analyseApexClassMember(dependantApexClassMember);
 			} catch (Exception e) {
-				System.out.println("WARNING: Skipping Apex Trigger "+dependantApexTriggerName);
+				System.out.println("WARNING: Skipping Apex Trigger "+dependantApexClassName);
 			}
 		}
 		printDependencies();
