@@ -7,17 +7,9 @@ import com.nttdata.sf.partner.DescribeRelatedContentItem;
 import com.nttdata.sf.tooling.DescribeSObjectResult;
 import com.nttdata.sf.tooling.Field;
 
-
-/**
- * @author oliverkoeth
- *
- */
 public class Main {
 	static ApexClassAnalyser apexClassAnalyser = new ApexClassAnalyser ();
 	
-	/**
-	 * @param args
-	 */
 	public static void main(String[] args) throws Exception {
 		System.out.println("Hello world");
 
@@ -28,25 +20,13 @@ public class Main {
         	
     		ToolingDriver.createWSBindingProvider(sessionId);
     		
-    		//apexClassAnalyser.deleteMetadataContainer();
-    		apexClassAnalyser.compileAll();
+            DescribeSObjectResult result = 
+            		ToolingDriver.getPort().describeSObject("ApexClass");
+            
+            for (Field field : result.getFields()) {
+            	System.out.println(field.getName());
+            }
     		
-//            DescribeSObjectResult result = 
-//            		ToolingDriver.getPort().describeSObject("ContainerAsyncRequest");
-//            
-//            for (Field field : result.getFields()) {
-//            	System.out.println(field.getName());
-//            }
-    		
-    		//System.out.println(apexClassAnalyser.getMetadataContainerId());
-    		//apexClassAnalyser.compileMetadataContainer();
-    		//apexClassAnalyser.analyseApexTrigger("AccountAfterInsertOrUpdate");
-    		//apexClassAnalyser.analyseApexClass("AccountMergeController");
-    		//apexClassAnalyser.analyseApexClass("ViewSurveyController");
-    		//analyseCRiSTrigger();
-    		//apexClassAnalyser.analyseApexControllers();
-    		//apexClassAnalyser.analyseApexTriggers();
-    		//System.out.println("INFO: Number of Compiles in this session "+apexClassAnalyser.getNumOfCompiles());
         }
         finally {
         	PartnerDriver.getWSBindingProvider().close();

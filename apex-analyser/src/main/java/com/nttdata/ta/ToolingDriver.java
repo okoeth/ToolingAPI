@@ -16,6 +16,9 @@ import javax.xml.namespace.QName;
 import javax.xml.ws.handler.MessageContext;
 
 import com.nttdata.sf.tooling.CallOptions;
+import com.nttdata.sf.tooling.Error;
+import com.nttdata.sf.tooling.SObject;
+import com.nttdata.sf.tooling.SaveResult;
 import com.nttdata.sf.tooling.SessionHeader;
 import com.nttdata.sf.tooling.SforceServicePortType;
 import com.nttdata.sf.tooling.SforceServiceService;
@@ -40,8 +43,6 @@ public class ToolingDriver {
         callOptions = new CallOptions();
         return callOptions;
     }
-        
-
 	
 	// Not thread safe!!!
     private static JAXBContext jaxbContext = null;
@@ -95,10 +96,30 @@ public class ToolingDriver {
         headersPartner.add(Headers.create((JAXBRIContext) getJAXBContext(), getCallOptions()));
         getWSBindingProvider().setOutboundHeaders(headersPartner);
 	}
+	
 	public static WSBindingProvider getWSBindingProvider () {
 		return wsBindingProvider;
 	}
+	
 	public static SforceServicePortType getPort() {
 		return (SforceServicePortType) wsBindingProvider;
 	}		
+
+	public static List<SaveResult> createObject (SObject sobject) {
+		List<SObject> sobjects = new ArrayList<SObject> ();
+		sobjects.add(sobject);
+		return createObjects(sobjects);
+	}
+	
+	public static List<SaveResult> createObjects (List<SObject> sobjects) {
+		List<SaveResult> results = ToolingDriver.getPort().create(sobjects);
+		for (SaveResult result : results) {
+			for (Error error : result.getErrors()) {
+				System.out.println("ERROR: "+error.getMessage());
+			}
+		}
+		return results;
+	}
+
+	
 }
